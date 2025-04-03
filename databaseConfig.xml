@@ -1,0 +1,6 @@
+<credentials>
+    <jdbcDriver>com.mysql.cj.jdbc.Driver</jdbcDriver>
+    <databaseURL>jdbc:mysql://localhost:3306/UniX</databaseURL>
+    <user>root</user>
+    <password>Leejinwoo_9</password>
+</credentials>
