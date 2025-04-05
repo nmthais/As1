@@ -28,7 +28,7 @@ credits		INT		CHECK (credits BETWEEN 0 AND 200) DEFAULT 20);
 /* Inserting sample data to Course table */
 INSERT INTO Course VALUES ('COMP1140', 'Database Management', 10);
 INSERT INTO Course VALUES ('SENG1110', 'Programming', 10);
-INSERT INTO Course VALUES ('SENG1050', 'Web Technologies', 40);
+INSERT INTO Course VALUES ('SENG1050', 'Web Technologies', 10);
 INSERT INTO Course VALUES ('SENG2050', 'Web Engineering', 10);
 INSERT INTO Course VALUES ('INFT2031', 'Systems and Network Admin', 10);
 INSERT INTO Course VALUES ('INFT3050', 'Web Programming', 10);
@@ -52,7 +52,8 @@ preReqKnowledge		CHAR(8) REFERENCES Course(courseID),
 PRIMARY KEY (courseId, preReqKnowledge));
 
 /* Inserting sample data to PrerequisiteKnowledge table */
-INSERT INTO PrerequisiteKnowledge (courseID, preReqKnowledge) VALUES ('SENG2050', 'SENG1110');
+-- INSERT INTO PrerequisiteKnowledge (courseID, preReqKnowledge) VALUES ('SENG2050', 'SENG1110');
+-- INSERT INTO PrerequisiteKnowledge (courseID, preReqKnowledge) VALUES ('SENG2050', 'INFT2031');
 
 /* Creating Semester table */
 CREATE TABLE Semester (
@@ -96,9 +97,11 @@ FOREIGN KEY(stdNo) REFERENCES Student(stdNo),
 FOREIGN KEY (courseID, semesterID) REFERENCES CourseOfferings (courseID, semesterID));
 
 /* Inserting sample data to StudentCourseRegistration table */
- INSERT INTO StudentCourseRegistration(stdNo,courseID, semesterID) VALUES ('c1234', 'SENG1110', 102);
+INSERT INTO StudentCourseRegistration(stdNo,courseID, semesterID) VALUES ('c1234', 'SENG1110', 102);
+INSERT INTO StudentCourseRegistration(stdNo,courseID, semesterID) VALUES ('cs', 'SENG4500', 100);
+-- INSERT INTO StudentCourseRegistration(stdNo,courseID, semesterID, grade) VALUES ('cs', 'SENG1110', 102, 'HD');	
  
-CREATE TABLE Message( message VARCHAR(50) );
+CREATE TABLE Message( message VARCHAR(255) );
 
 -- Check maxCapacity for course enrollment
 DELIMITER //
@@ -121,43 +124,11 @@ BEGIN
 
     -- Check if the course is full
     IF noStudentEnrolled >= maxCapacityCheck THEN
-		INSERT INTO Message values ("Error: Course capacity exceeded");
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Course capacity exceeded', MYSQL_ERRNO = 10003;
+        SET MESSAGE_TEXT = 'Error: Course capacity exceeded', MYSQL_ERRNO = 10003;
         
     END IF;
 End //
-
-
-DELIMITER //
-
-CREATE TRIGGER checkPrerequisiteKnowledge
-BEFORE INSERT ON StudentCourseRegistration
-FOR EACH ROW
-BEGIN
-    DECLARE prerequisiteCourseID CHAR(8);
-    DECLARE studentHasPrerequisite BOOLEAN;
-
-    -- Check if there are any prerequisites
-    SELECT preReqKnowledge INTO prerequisiteCourseID
-    FROM PrerequisiteKnowledge
-    WHERE courseID = NEW.courseID;
-
-    IF prerequisiteCourseID IS NOT NULL THEN
-        -- Check if the student has taken the prerequisite
-        SELECT COUNT(*) > 0 INTO studentHasPrerequisite
-        FROM StudentCourseRegistration
-        WHERE stdNo = NEW.stdNo
-		AND courseID = prerequisiteCourseID
-		AND grade IS NOT NULL;
-
-        IF NOT studentHasPrerequisite THEN
-			INSERT INTO Message values ('Error: Prerequisite course not completed');
-            SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Prerequisite course not completed';
-        END IF;
-    END IF;
-END //
 
 
 DELIMITER //
@@ -176,9 +147,8 @@ BEGIN
     WHERE scr.stdNO = NEW.stdNo AND scr.semesterID = NEW.semesterID;
     
     IF totalUnits >= 40 THEN
-		INSERT INTO Message VALUES ("Error: Total units exceeds 40 for a semester");
 		SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Total units exceeds 40 for a semester';
+        SET MESSAGE_TEXT = 'Total units exceeds 40 for a semester', MYSQL_ERRNO = 10003;
 	END IF;
     
 END//
@@ -189,25 +159,39 @@ FOR EACH ROW
 BEGIN
     DECLARE assumedKnowledgeCourseID CHAR(8);
     DECLARE studentHasAssumedKnowledge BOOLEAN;
+    DECLARE done BOOLEAN DEFAULT FALSE;
+    DECLARE assumedKnowledgeCursor CURSOR FOR
+        SELECT assumedKnowledge
+        FROM AssumedKnowledge
+        WHERE courseID = NEW.courseID;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
 
-    -- Check if there are any prerequisites
-    SELECT assumedKnowledge INTO assumedKnowledgeCourseID
-    FROM AssumedKnowledge
-    WHERE courseID = NEW.courseID;
+    OPEN assumedKnowledgeCursor;
 
-    IF assumedKnowledgeCourseID IS NOT NULL THEN
-        -- Check if the student has taken the prerequisite
+    read_loop: LOOP
+        FETCH assumedKnowledgeCursor INTO assumedKnowledgeCourseID;
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
+
+        -- Check if the student has taken the assumed knowledge course
         SELECT COUNT(*) > 0 INTO studentHasAssumedKnowledge
         FROM StudentCourseRegistration
         WHERE stdNo = NEW.stdNo
-		AND courseID = assumedCourseID
-		AND grade IS NOT NULL;
+          AND courseID = assumedKnowledgeCourseID
+          AND grade IS NOT NULL;
 
         IF NOT studentHasAssumedKnowledge THEN
-            INSERT INTO Message values ("Warning: Assumed knowledge not completed");
+            INSERT INTO Message VALUES (CONCAT("Warning: Assumed knowledge ", assumedKnowledgeCourseID, " for course", NEW.courseID ," not completed"));
         END IF;
-    END IF;
+
+    END LOOP;
+
+    CLOSE assumedKnowledgeCursor;
 END //
+
+
+
 
 -- check
 	

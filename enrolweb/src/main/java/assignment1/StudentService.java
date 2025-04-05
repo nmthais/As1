@@ -6,6 +6,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.List;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -110,6 +111,51 @@ public class StudentService {
         return courseList;
     }
 
+    public ArrayList<Course> checkFinishedCourse(Student student){
+        ArrayList<String> courseListID = new ArrayList<>();
+        ArrayList<Course> courseList = new ArrayList<>();
+        String studentID = student.getStdNo();
+        String sql = "Select * from StudentCourseRegistration Where stdNo = ?";
+
+        try(Connection connection = dataSource.getConnection();
+            PreparedStatement statement = connection.prepareStatement(sql)){
+
+            statement.setString(1, studentID);
+            ResultSet resultSet = statement.executeQuery();
+            while (resultSet.next()) {
+                courseListID.add(resultSet.getString("courseID"));
+            }
+            for(String courseID : courseListID){
+                courseList.add(courseImp.getCourse(courseID));
+            }
+        }
+        catch(Exception e){
+            e.printStackTrace();
+        }
+        return courseList;
+    }
+
+    public ArrayList<Course> updateCourses(ArrayList<Course> unfinishedCourses, ArrayList<Course> finishedCourses){
+        ArrayList<String> uCString = new ArrayList<>();
+        ArrayList<String> fCString = new ArrayList<>();
+        for(Course course : unfinishedCourses){
+            uCString.add(course.getCourseID());
+        }
+
+        for(Course course : finishedCourses){
+            fCString.add(course.getCourseID());
+        }
+        boolean removed = uCString.removeAll(fCString);
+        if(removed){
+            unfinishedCourses.clear();
+            for(String courseID: uCString){
+                unfinishedCourses.add(courseImp.getCourse(courseID));
+            }
+        }
+
+        return unfinishedCourses;
+    }
+
     //Enroll student into a course, reuturn true if enroll successfully
     public EnrollMessage StudentEnroll(Student student, ArrayList<String> courses, int semesterID){
         EnrollMessage enrollMessage = new EnrollMessage();
@@ -117,15 +163,17 @@ public class StudentService {
         try (Connection connection = dataSource.getConnection();
             PreparedStatement statement = connection.prepareStatement(sql)){
             for(String courseID : courses){
+                List<String> missingPrereqs = getMissingPrerequisites(student.getStdNo(), courseID, connection);
+                if (!missingPrereqs.isEmpty()) {
+                    throw new SQLException("Prerequisites " +  missingPrereqs + " not met for course: " + courseID);
+                }
                 statement.setString(1, student.getStdNo());
                 statement.setString(2, courseID);
                 statement.setInt(3, semesterID);
                 statement.executeUpdate();
+                enrollMessage.setEnrollMessage(" Enroll successfully in course: " + courseID + getMessageSQL());
             }
-            enrollMessage.setisEnroll(true);
-            enrollMessage.setEnrollMessage(getMessageSQL());
         } catch (SQLException eSQL) {
-            enrollMessage.setisEnroll(false);
             enrollMessage.setEnrollMessage(eSQL.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
@@ -142,9 +190,8 @@ public class StudentService {
 
                 ResultSet resultSet = statement.executeQuery();
                 while (resultSet.next()) {
-                    messageString += resultSet.getString("message") + "\n";
+                    messageString += "<br/>" + resultSet.getString("message");
                 }
-                System.out.println("messageString in method: " + messageString);
             }
             catch(Exception e){
                 e.printStackTrace();
@@ -152,4 +199,32 @@ public class StudentService {
 
         return messageString;
     }
+
+    public List<String> getMissingPrerequisites(String studentId, String courseId, Connection connection) throws SQLException {
+    List<String> missingPrerequisites = new ArrayList<>();
+    String prerequisiteSql = "SELECT preReqKnowledge FROM PrerequisiteKnowledge WHERE courseID = ?";
+    try (PreparedStatement prerequisiteStatement = connection.prepareStatement(prerequisiteSql)) {
+        prerequisiteStatement.setString(1, courseId);
+        ResultSet prerequisiteResultSet = prerequisiteStatement.executeQuery();
+
+        while (prerequisiteResultSet.next()) {
+            String prerequisiteCourseId = prerequisiteResultSet.getString("preReqKnowledge");
+            String studentPrerequisiteCheckSql = "SELECT COUNT(*) FROM StudentCourseRegistration WHERE stdNo = ? AND courseID = ? AND grade IS NOT NULL";
+            try (PreparedStatement studentPrerequisiteStatement = connection.prepareStatement(studentPrerequisiteCheckSql)) {
+                studentPrerequisiteStatement.setString(1, studentId);
+                studentPrerequisiteStatement.setString(2, prerequisiteCourseId);
+                ResultSet studentPrerequisiteResultSet = studentPrerequisiteStatement.executeQuery();
+
+                if (studentPrerequisiteResultSet.next()) {
+                    int count = studentPrerequisiteResultSet.getInt(1);
+                    if (count == 0) {
+                        missingPrerequisites.add(prerequisiteCourseId); // Add missing prereq
+                    }
+                }
+            }
+        }
+    }
+    return missingPrerequisites; // Return list of missing prereqs
+}
+    
 }

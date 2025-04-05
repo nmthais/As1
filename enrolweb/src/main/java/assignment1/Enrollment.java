@@ -20,15 +20,12 @@ public class Enrollment extends HttpServlet{
             return;
         }
         else{
-            session.setAttribute("enroll", null);
             RequestDispatcher requestDispatcher = request.getRequestDispatcher("/Code/Enroll.jsp");
             requestDispatcher.forward(request, response);
         }
     }
 
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException{
-        //handle enrollment     
-        //also handle log out invalidate each session instead of alltogether
         HttpSession session = request.getSession(false);
         
         if(session ==null){
@@ -36,29 +33,35 @@ public class Enrollment extends HttpServlet{
             response.sendRedirect("Login");
         }
         else{
+            
+            //initiate vars
             StudentService studentService = new StudentService();
             Student student = (Student) session.getAttribute("student");
-            int pickedSem = (Integer) session.getAttribute("semester");
+            int pickedSemID = (Integer) session.getAttribute("semester");
             String [] coursesArray = request.getParameterValues("course[]");
+            //enroll student
             ArrayList<String> courseSubmitted = new ArrayList<>(Arrays.asList(coursesArray));
-            EnrollMessage enrollMessageObj = studentService.StudentEnroll(student, courseSubmitted, pickedSem);
-            boolean isEnroll = enrollMessageObj.getisEnroll();
+            EnrollMessage enrollMessageObj = studentService.StudentEnroll(student, courseSubmitted, pickedSemID);
+            //update list of completed, uncompleted
+            @SuppressWarnings("unchecked")
+            ArrayList<Course> unfinishedCourses = (ArrayList<Course>) session.getAttribute("unfinishedCourses");
+            ArrayList<Course> finishedCourses = studentService.checkFinishedCourse(student);
+            ArrayList<String> finishedCoursesStr = new ArrayList<>();
+            for(Course course : finishedCourses){
+                finishedCoursesStr.add(course.getCourseID() + " - " + course.getCourseName());
+            }
+            ArrayList<Course> updatedCourseList = studentService.updateCourses(unfinishedCourses, finishedCourses);
             
-            if(isEnroll)
-            {
-                request.setAttribute("eMessage", enrollMessageObj.getEnrollMessage());
-                request.setAttribute("enroll", isEnroll);
-                RequestDispatcher requestDispatcher = request.getRequestDispatcher("/Code/Enroll.jsp");
-                requestDispatcher.forward(request, response);
+            session.setAttribute("unfinishedCourses", updatedCourseList);
+            session.setAttribute("finishedCourses", finishedCoursesStr);
+            session.setAttribute("eMessage", enrollMessageObj.getEnrollMessage()); 
+            session.setAttribute("displayAlert", true);
+            
+
+            
+            response.sendRedirect("Enrollment");
                 
-            }
-            else{
-                request.setAttribute("eMessage", enrollMessageObj.getEnrollMessage());
-                System.out.println(enrollMessageObj.getEnrollMessage());
-                request.setAttribute("enroll", isEnroll);
-                RequestDispatcher requestDispatcher = request.getRequestDispatcher("/Code/Enroll.jsp");
-                requestDispatcher.forward(request, response);
-            }
+            
         }
     }
     

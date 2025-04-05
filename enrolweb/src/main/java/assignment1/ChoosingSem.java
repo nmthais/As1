@@ -40,11 +40,19 @@ public class ChoosingSem extends HttpServlet{
             StudentService studentService = new StudentService();
             String stringPickedSem = request.getParameter("semester");
             int pickedSemID = Integer.parseInt(stringPickedSem.split(" ")[0]);
-            ArrayList<Course> courseList = studentService.checkOfferedCourse(pickedSemID);
-        
+            Student student = (Student) session.getAttribute("student");
+            ArrayList<Course> finishedCourses = studentService.checkFinishedCourse(student);
+            ArrayList<String> finishedCoursesStr = new ArrayList<>();
+            for(Course course : finishedCourses){
+                finishedCoursesStr.add(course.getCourseID() + " - " + course.getCourseName());
+            }
+            ArrayList<Course> unfinishedCourseList = studentService.updateCourses(studentService.checkOfferedCourse(pickedSemID), finishedCourses);
+            
+            session.setAttribute("finishedCourses", finishedCoursesStr);
+            session.setAttribute("semName", stringPickedSem);
             session.setAttribute("student", session.getAttribute("student"));
             session.setAttribute("semester", pickedSemID);
-            session.setAttribute("courses", courseList);
+            session.setAttribute("unfinishedCourses", unfinishedCourseList);
 
             response.sendRedirect("Enrollment");
         }
